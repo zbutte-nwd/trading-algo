@@ -126,23 +126,39 @@ export class TradingEngine {
     }
   }
 
-  // Monitor open positions and close if exit conditions are met
+  // Monitor open positions and sync with Alpaca
   async monitorPositions(): Promise<void> {
-    const openTrades = db.getOpenTrades();
+    if (!this.alpacaService || !config.trading.useAlpaca) {
+      logger.info('Alpaca not enabled, skipping position monitoring');
+      return;
+    }
 
-    logger.info(`Monitoring ${openTrades.length} open positions...`);
+    try {
+      // Get live positions from Alpaca
+      const alpacaPositions = await this.alpacaService.getPositions();
+      const localTrades = db.getOpenTrades();
 
-    for (const trade of openTrades) {
-      try {
-        const exitCheck = await TradingStrategy.checkExitConditions(trade);
+      logger.info(`Monitoring ${alpacaPositions.length} Alpaca positions (${localTrades.length} local trades)`);
 
-        if (exitCheck.shouldExit) {
-          logger.info(`Exit signal for ${trade.symbol}: ${exitCheck.reason}`);
-          await this.closeTrade(trade.id!);
-        }
-      } catch (error) {
-        logger.error(`Error monitoring position ${trade.symbol}:`, error);
+      // Log current positions with P&L
+      for (const position of alpacaPositions) {
+        const pnlPercent = (position.unrealizedPLPercent * 100).toFixed(2);
+        const pnlColor = position.unrealizedPL >= 0 ? '+' : '';
+        logger.info(`${position.symbol}: ${pnlColor}$${position.unrealizedPL.toFixed(2)} (${pnlColor}${pnlPercent}%) @ $${position.currentPrice}`);
       }
+
+      // Sync: close local trades that are no longer in Alpaca (stopped out or took profit)
+      for (const localTrade of localTrades) {
+        const stillOpen = alpacaPositions.some(p => p.symbol === localTrade.symbol);
+
+        if (!stillOpen && localTrade.notes?.includes('Alpaca Order ID:')) {
+          logger.info(`Position ${localTrade.symbol} closed in Alpaca, updating local database`);
+          // Position was closed by bracket order (stop loss or take profit)
+          await this.closeTrade(localTrade.id!);
+        }
+      }
+    } catch (error) {
+      logger.error('Error monitoring Alpaca positions:', error);
     }
   }
 
@@ -257,10 +273,28 @@ export class TradingEngine {
   }
 
   // Calculate portfolio statistics
-  getPortfolioStats() {
+  async getPortfolioStats() {
     const stats = db.getStats();
     const portfolio = db.getPortfolio();
     const openTrades = db.getOpenTrades();
+
+    let accountBalance = portfolio.cash;
+    let totalValue = portfolio.cash;
+
+    // If using Alpaca, get real account data
+    if (this.alpacaService && config.trading.useAlpaca) {
+      try {
+        const alpacaAccount = await this.alpacaService.getAccount();
+        const alpacaPositions = await this.alpacaService.getPositions();
+
+        accountBalance = alpacaAccount.cash;
+        totalValue = alpacaAccount.portfolioValue;
+
+        logger.info(`Alpaca account: $${accountBalance} cash, $${totalValue} total value, ${alpacaPositions.length} positions`);
+      } catch (error) {
+        logger.error('Failed to fetch Alpaca account data, using local data:', error);
+      }
+    }
 
     const investedCapital = openTrades.reduce((sum, trade) => {
       if (trade.action === 'BUY') {
@@ -269,9 +303,8 @@ export class TradingEngine {
       return sum;
     }, 0);
 
-    const totalValue = portfolio.cash + investedCapital;
-
     return {
+      accountBalance,
       cash: portfolio.cash,
       initialCash: portfolio.initialCash,
       investedCapital,
@@ -279,5 +312,123 @@ export class TradingEngine {
       totalReturn: ((totalValue - portfolio.initialCash) / portfolio.initialCash) * 100,
       ...stats,
     };
+  }
+
+  // Screen stocks for signals (used by end-of-day screening)
+  async screenStocksForSignals(watchlist: string[]): Promise<{ picks: any[] }> {
+    const strategy = new TradingStrategy();
+    const picks: any[] = [];
+
+    for (const symbol of watchlist) {
+      try {
+        const analysis = await strategy.analyze(symbol);
+
+        if (analysis.signal !== 'HOLD') {
+          picks.push({
+            symbol,
+            signal: analysis.signal,
+            price: analysis.currentPrice,
+            rsi: analysis.rsi,
+            maShort: analysis.maShort,
+            maLong: analysis.maLong,
+            stopLoss: analysis.stopLoss,
+            takeProfit: analysis.takeProfit,
+            reason: analysis.reason
+          });
+        }
+      } catch (error) {
+        // Skip stocks that error
+        continue;
+      }
+    }
+
+    return { picks };
+  }
+
+  // Execute screened picks (used by pre-market execution)
+  async executeScreenedPicks(picks: any[]): Promise<{ entered: number; skipped: number }> {
+    let entered = 0;
+    let skipped = 0;
+
+    for (const pick of picks) {
+      try {
+        const portfolio = db.getPortfolio();
+        const cost = pick.price * 100; // Default 100 shares
+
+        if (cost > portfolio.cash) {
+          skipped++;
+          continue;
+        }
+
+        const trade: Omit<Trade, 'id'> = {
+          symbol: pick.symbol,
+          type: 'STOCK',
+          action: pick.signal === 'BUY' ? 'BUY' : 'SELL',
+          quantity: 100,
+          entryPrice: pick.price,
+          entryDate: new Date().toISOString(),
+          stopLoss: pick.stopLoss,
+          takeProfit: pick.takeProfit,
+          status: 'OPEN',
+          strategy: 'RSI_MA_CROSSOVER',
+          entryReason: pick.reason,
+          exitCriteria: `SL: ${pick.stopLoss.toFixed(2)}, TP: ${pick.takeProfit.toFixed(2)}`,
+          rsi: pick.rsi,
+          maShort: pick.maShort,
+          maLong: pick.maLong
+        };
+
+        await this.executeTrade(trade);
+        db.markScreeningResultExecuted(pick.id);
+        entered++;
+      } catch (error) {
+        logger.error(`Error executing pick for ${pick.symbol}:`, error);
+        skipped++;
+      }
+    }
+
+    return { entered, skipped };
+  }
+
+  // Check exit conditions for a single trade
+  async checkExitConditions(trade: Trade): Promise<void> {
+    try {
+      const strategy = new TradingStrategy();
+      const analysis = await strategy.analyze(trade.symbol);
+
+      // Check stop loss
+      if (analysis.currentPrice <= trade.stopLoss) {
+        logger.info(`Stop loss hit for ${trade.symbol} at ${analysis.currentPrice}`);
+        db.closeTrade(trade.id, analysis.currentPrice, new Date().toISOString(), 'Stop loss triggered');
+        return;
+      }
+
+      // Check take profit
+      if (analysis.currentPrice >= trade.takeProfit) {
+        logger.info(`Take profit hit for ${trade.symbol} at ${analysis.currentPrice}`);
+        db.closeTrade(trade.id, analysis.currentPrice, new Date().toISOString(), 'Take profit triggered');
+        return;
+      }
+
+      // Check signal reversal
+      if (trade.action === 'BUY' && analysis.signal === 'SELL') {
+        logger.info(`Exit signal for ${trade.symbol} at ${analysis.currentPrice}`);
+        db.closeTrade(trade.id, analysis.currentPrice, new Date().toISOString(), analysis.reason);
+      }
+    } catch (error) {
+      logger.error(`Error checking exit conditions for ${trade.symbol}:`, error);
+    }
+  }
+
+  // Quick price check (for hourly watchlist polling)
+  async quickPriceCheck(symbol: string): Promise<void> {
+    try {
+      if (this.alpacaService) {
+        const quote = await this.alpacaService.getQuote(symbol);
+        logger.info(`${symbol}: $${quote.price}`);
+      }
+    } catch (error) {
+      // Silent fail for watchlist checks
+    }
   }
 }

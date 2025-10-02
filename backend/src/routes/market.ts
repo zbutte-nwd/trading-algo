@@ -1,14 +1,18 @@
 import express from 'express';
-import { yahooMarketDataService } from '../services/yahooMarketData';
+import { yahooFinanceService } from '../services/yahooFinanceService';
+import { alpacaMarketDataService } from '../services/alpacaMarketData';
 import { TradingStrategy } from '../services/strategy';
 import { logger } from '../utils/logger';
+import { config } from '../config';
 
 const router = express.Router();
 
 // Get quote for a symbol
 router.get('/quote/:symbol', async (req, res) => {
   try {
-    const quote = await yahooMarketDataService.getQuote(req.params.symbol);
+    const quote = config.trading.useAlpacaMarketData
+      ? await alpacaMarketDataService.getQuote(req.params.symbol)
+      : await yahooFinanceService.getQuote(req.params.symbol);
     res.json(quote);
   } catch (error) {
     logger.error('Error fetching quote:', error);
@@ -19,21 +23,25 @@ router.get('/quote/:symbol', async (req, res) => {
 // Get daily data
 router.get('/daily/:symbol', async (req, res) => {
   try {
-    const outputsize = (req.query.outputsize as 'compact' | 'full') || 'compact';
-    const data = await yahooMarketDataService.getDailyData(req.params.symbol, outputsize);
-    res.json(data);
+    if (config.trading.useAlpacaMarketData) {
+      const outputSize = req.query.outputsize === 'full' ? 'full' : 'compact';
+      const data = await alpacaMarketDataService.getDailyData(req.params.symbol, outputSize);
+      res.json(data);
+    } else {
+      const days = req.query.outputsize === 'full' ? 365 : 100;
+      const data = await yahooFinanceService.getHistoricalData(req.params.symbol, days);
+      res.json(data);
+    }
   } catch (error) {
     logger.error('Error fetching daily data:', error);
     res.status(500).json({ error: 'Failed to fetch daily data' });
   }
 });
 
-// Get intraday data
+// Get intraday data - Not supported by Alpaca free tier, return error
 router.get('/intraday/:symbol', async (req, res) => {
   try {
-    const interval = (req.query.interval as any) || '5min';
-    const data = await yahooMarketDataService.getIntradayData(req.params.symbol, interval);
-    res.json(data);
+    res.status(501).json({ error: 'Intraday data not available with Alpaca' });
   } catch (error) {
     logger.error('Error fetching intraday data:', error);
     res.status(500).json({ error: 'Failed to fetch intraday data' });
@@ -68,7 +76,7 @@ router.post('/screen', async (req, res) => {
   }
 });
 
-// Search for symbols
+// Search for symbols - Not supported, return empty array
 router.get('/search', async (req, res) => {
   try {
     const query = req.query.q as string;
@@ -77,8 +85,8 @@ router.get('/search', async (req, res) => {
       return res.status(400).json({ error: 'query parameter "q" is required' });
     }
 
-    const results = await yahooMarketDataService.search(query);
-    res.json(results);
+    // Symbol search not available with Alpaca, return empty array
+    res.json([]);
   } catch (error) {
     logger.error('Error searching symbols:', error);
     res.status(500).json({ error: 'Failed to search symbols' });

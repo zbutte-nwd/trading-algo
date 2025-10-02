@@ -16,8 +16,8 @@ const PortfolioStats: React.FC<PortfolioStatsProps> = ({ stats }) => {
           </div>
           <div>
             <p className="text-slate-400 text-sm">Total Value</p>
-            <p className="text-2xl font-bold text-white">${stats.totalValue.toFixed(2)}</p>
-            <p className="text-xs text-slate-400">Cash: ${stats.accountBalance.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-white">${(stats?.totalValue ?? 0).toFixed(2)}</p>
+            <p className="text-xs text-slate-400">Cash: ${(stats?.accountBalance ?? 0).toFixed(2)}</p>
           </div>
         </div>
       </div>
@@ -25,16 +25,16 @@ const PortfolioStats: React.FC<PortfolioStatsProps> = ({ stats }) => {
       <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
         <div className="flex items-center gap-3">
           <div className={`p-3 rounded-lg ${
-            stats.totalPnL >= 0 ? 'bg-green-900/50' : 'bg-red-900/50'
+            (stats?.totalPnL ?? 0) >= 0 ? 'bg-green-900/50' : 'bg-red-900/50'
           }`}>
-            <TrendingUp className={stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'} size={24} />
+            <TrendingUp className={(stats?.totalPnL ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'} size={24} />
           </div>
           <div>
             <p className="text-slate-400 text-sm">Total P&L</p>
             <p className={`text-2xl font-bold ${
-              stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'
+              (stats?.totalPnL ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
             }`}>
-              {stats.totalPnL >= 0 ? '+' : ''}${stats.totalPnL.toFixed(2)}
+              {(stats?.totalPnL ?? 0) >= 0 ? '+' : ''}${(stats?.totalPnL ?? 0).toFixed(2)}
             </p>
           </div>
         </div>
@@ -47,8 +47,8 @@ const PortfolioStats: React.FC<PortfolioStatsProps> = ({ stats }) => {
           </div>
           <div>
             <p className="text-slate-400 text-sm">Open Trades</p>
-            <p className="text-2xl font-bold text-white">{stats.openTrades}</p>
-            <p className="text-xs text-slate-400">Invested: ${stats.investedCapital.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-white">{stats?.openTrades ?? 0}</p>
+            <p className="text-xs text-slate-400">Invested: ${(stats?.investedCapital ?? 0).toFixed(2)}</p>
           </div>
         </div>
       </div>
@@ -60,8 +60,8 @@ const PortfolioStats: React.FC<PortfolioStatsProps> = ({ stats }) => {
           </div>
           <div>
             <p className="text-slate-400 text-sm">Win Rate</p>
-            <p className="text-2xl font-bold text-white">{stats.winRate.toFixed(1)}%</p>
-            <p className="text-xs text-slate-400">{stats.closedTrades} closed trades</p>
+            <p className="text-2xl font-bold text-white">{(stats?.winRate ?? 0).toFixed(1)}%</p>
+            <p className="text-xs text-slate-400">{stats?.closedTrades ?? 0} closed trades</p>
           </div>
         </div>
       </div>

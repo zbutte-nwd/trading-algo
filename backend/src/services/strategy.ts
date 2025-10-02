@@ -1,6 +1,7 @@
 import { StockData, Trade, ScreeningCriteria } from '../types';
 import { TechnicalAnalysis } from './indicators';
-import { yahooMarketDataService } from './yahooMarketData';
+import { alpacaMarketDataService } from './alpacaMarketData';
+import { yahooFinanceService } from './yahooFinanceService';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -16,8 +17,10 @@ export class TradingStrategy {
     reason: string;
   }> {
     try {
-      // Get historical data
-      const dailyData = await yahooMarketDataService.getDailyData(symbol, 'compact');
+      // Get historical data from either Alpaca or Yahoo Finance based on config
+      const dailyData = config.trading.useAlpacaMarketData
+        ? await alpacaMarketDataService.getDailyData(symbol, 'compact')
+        : await yahooFinanceService.getHistoricalData(symbol, 100);
 
       if (dailyData.length < config.strategy.maLongPeriod + 10) {
         throw new Error(`Insufficient data for analysis`);
@@ -199,7 +202,7 @@ export class TradingStrategy {
     currentPrice: number;
   }> {
     try {
-      const quote = await yahooMarketDataService.getQuote(trade.symbol);
+      const quote = await alpacaMarketDataService.getQuote(trade.symbol);
       const currentPrice = quote.price;
 
       // Check stop loss
@@ -237,7 +240,7 @@ export class TradingStrategy {
       }
 
       // Check technical indicators for reversal
-      const dailyData = await yahooMarketDataService.getDailyData(trade.symbol, 'compact');
+      const dailyData = await alpacaMarketDataService.getDailyData(trade.symbol, 'compact');
       const indicators = TechnicalAnalysis.getIndicators(dailyData);
 
       // Exit long if overbought or bearish crossover

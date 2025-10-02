@@ -1,93 +1,57 @@
-# 🚀 Automated Trading Algorithm
+# Trading Algorithm
 
-A production-ready automated stock trading system with Alpaca paper trading integration, real-time market data, and intelligent trade execution. Built with TypeScript, React, Express, and SQLite.
+Automated stock trading system using Alpaca API with RSI + Moving Average Crossover strategy.
 
-## ⚡ Quick Start (One Command Setup)
+## Features
 
-Clone and run this on any server:
+- **Automated Trading**: 4 scheduled tasks for end-to-day screening, pre-market execution, and position monitoring
+- **3,000+ Stocks**: Russell 3000 watchlist for daily screening
+- **API Optimization**: Multi-layer caching (memory + SQLite) to stay under 100 API calls/minute
+- **Market Hours Aware**: Intelligent caching based on market status (5min during market, 60min off-market)
+- **Paper Trading**: Safe testing with Alpaca paper trading
+- **Real-time Dashboard**: Monitor positions, portfolio stats, and screening picks
 
-```bash
-git clone https://github.com/YOUR_USERNAME/trading-algo.git
-cd trading-algo
-chmod +x setup.sh
-./setup.sh
-```
-
-That's it! The script will:
-- ✅ Install all dependencies
-- ✅ Set up the database
-- ✅ Configure environment files
-- ✅ Install PM2 for production (optional)
-- ✅ Guide you through API key setup
-
-## 🎯 Features
-
-### Automated Trading
-- **🤖 Daily Automated Trading**: Runs automatically at 5pm PST
-- **💰 $100,000 Starting Capital**: Simulated portfolio tracking
-- **📊 3,269 Stock Watchlist**: Russell 3000 pre-loaded
-- **🎯 Smart Position Management**: Auto-close based on exit signals
-- **🔒 Risk Management**: Automatic stop-loss and take-profit orders
-
-### Alpaca Integration
-- **📈 Real-time Market Data**: Live quotes from Alpaca
-- **📝 Paper Trading**: Practice with $100k virtual account
-- **⚡ Bracket Orders**: Auto stop-loss (5%) and take-profit (10%)
-- **📱 Order Tracking**: Monitor in Alpaca dashboard
-- **🔄 Dual Mode**: Switch between simulation and Alpaca
-
-### Core Functionality
-- **Market Data Integration**: Real-time data via Yahoo Finance & Alpaca
-- **Proven Trading Strategy**: RSI + Moving Average Crossover
-- **Stock Screening**: Automated screening of 3,269 stocks
-- **Trade Tracking**: Complete history with P&L analysis
-- **Interactive Dashboard**: Charts, stats, and live updates
-
-### Trading Strategy
-
-The system implements a proven RSI + Moving Average Crossover strategy:
-
-**BUY Signals:**
-- RSI below 30 (oversold)
-- 20-period MA crosses above 50-period MA (bullish crossover)
-
-**SELL Signals:**
-- RSI above 70 (overbought)
-- 20-period MA crosses below 50-period MA (bearish crossover)
-
-**Risk Management:**
-- Stop Loss: 2 ATR below entry or at support level
-- Take Profit: 3:1 risk-reward ratio
-- Position sizing based on account risk (2% per trade)
-- Maximum position size: 10% of account
-
-## Tech Stack
-
-**Backend:**
-- Node.js + Express
-- TypeScript
-- SQLite (better-sqlite3)
-- Yahoo Finance 2 (market data)
-- Winston (logging)
-
-**Frontend:**
-- React + TypeScript
-- Vite
-- Tailwind CSS
-- Chart.js
-- React Router
-
-## Installation
+## Quick Start
 
 ### Prerequisites
-- Node.js 18+ and npm
 
-### Setup
+- Docker & Docker Compose (for containerized setup)
+- OR Node.js 21+ (for local development)
+- Alpaca API keys ([Get free paper trading keys](https://alpaca.markets/))
 
-1. **Install dependencies:**
+### Option 1: Docker (Recommended for Windows/Cross-platform)
+
+1. Clone the repository:
 ```bash
-# Install root dependencies
-npm install
+git clone <your-repo-url>
+cd trading-algo
+```
+
+2. Create `.env` file from example:
+```bash
+cp .env.example .env
+# Edit .env and add your Alpaca API keys
+```
+
+3. Run with Docker Compose:
+```bash
+# Development mode (with hot reload)
+docker-compose up
+
+# Production mode
+docker-compose --profile production up trading-algo-prod
+```
+
+4. Access the application:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001
+
+### Option 2: Local Development
+
+1. Clone and install dependencies:
+```bash
+git clone <your-repo-url>
+cd trading-algo
 
 # Install backend dependencies
 cd backend
@@ -96,195 +60,126 @@ npm install
 # Install frontend dependencies
 cd ../frontend
 npm install
-cd ..
 ```
 
-2. **Start the application:**
+2. Configure environment:
 ```bash
-# Start both backend and frontend (from root directory)
+# Create .env in root directory
+cp .env.example .env
+# Edit .env and add your Alpaca API keys
+```
+
+3. Start services:
+```bash
+# Terminal 1 - Backend
+cd backend
 npm run dev
 
-# Or start them separately:
-# Terminal 1 - Backend (runs on port 3001)
-npm run backend
-
-# Terminal 2 - Frontend (runs on port 3000)
-npm run frontend
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
 ```
 
-3. **Access the dashboard:**
-Open your browser to http://localhost:3000
+4. Access the application:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001
 
-## Usage
+## API Rate Limiting
 
-### 1. Add Stocks to Watchlist
+The system is optimized for Alpaca's free tier (200 API calls/minute):
 
-In the Dashboard, use the watchlist panel to add stock symbols (e.g., AAPL, MSFT, GOOGL, TSLA).
+- **Target**: 100 calls/minute (50% of limit)
+- **3-Tier Caching**:
+  - Memory cache: 5 minutes
+  - Database cache (market hours): 5 minutes
+  - Database cache (off-market): 60 minutes
+- **Smart Pagination**: 20 symbols per page on watchlist
+- **Monitoring**: Real-time API usage stats in watchlist response
 
-### 2. Run Analysis
+## Trading Schedule
 
-Run the analysis script to screen your watchlist and generate trades:
+- **4:00 PM EST**: End-of-day stock screening (analyzes entire watchlist)
+- **9:30 AM EST**: Execute screened positions from previous day
+- **Every 5 min (9:30am-4pm)**: Monitor active positions for exit signals
+- **Every hour (9:30am-4pm)**: Poll non-active watchlist stocks
 
-```bash
-cd backend
-npm run analyze
+## Technology Stack
+
+- **Backend**: Node.js, TypeScript, Express, SQLite
+- **Frontend**: React, TypeScript, Vite, TailwindCSS
+- **Trading**: Alpaca Markets API (paper trading)
+- **Strategy**: RSI (14) + MA Crossover (20/50)
+
+## Project Structure
+
+```
+trading-algo/
+├── backend/
+│   ├── src/
+│   │   ├── routes/        # API endpoints
+│   │   ├── services/      # Trading logic, Alpaca integration
+│   │   ├── database/      # SQLite operations
+│   │   └── index.ts       # Server entry
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── pages/         # React pages
+│   │   ├── components/    # Reusable components
+│   │   └── api.ts         # API client
+│   └── package.json
+├── data/                  # SQLite database (auto-created)
+├── docker-compose.yml     # Docker orchestration
+├── Dockerfile             # Production image
+└── Dockerfile.dev         # Development image
 ```
 
-This will:
-- Screen all watchlist symbols against your criteria
-- Generate buy/sell signals based on the trading strategy
-- Create simulated trades with entry/exit criteria
-- Monitor existing positions for exit signals
+## Environment Variables
 
-### 3. View Trades
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ALPACA_API_KEY` | Your Alpaca API key | Required |
+| `ALPACA_SECRET_KEY` | Your Alpaca secret key | Required |
+| `ALPACA_PAPER` | Use paper trading | `true` |
+| `DATABASE_PATH` | SQLite database path | `./data/trading.db` |
+| `PORT` | Backend server port | `3001` |
+| `NODE_ENV` | Environment | `development` |
 
-Navigate to the **Trade Bank** to see:
-- All open and closed positions
-- Entry/exit prices and criteria
-- P&L for each trade
-- Technical indicators at entry
+## Windows Setup Notes
 
-### 4. Analyze Individual Stocks
+When running on Windows:
 
-Use the **Analysis** page to:
-- Analyze any stock symbol
-- View technical indicators (RSI, Moving Averages, Support/Resistance)
-- Get buy/sell signals
-- See suggested stop loss and take profit levels
-
-### 5. Monitor Dashboard
-
-The Dashboard provides:
-- Portfolio statistics (total value, P&L, win rate)
-- Watchlist with current prices and signals
-- Interactive price charts
-- Auto-refresh every 60 seconds
-
-## Configuration
-
-Edit `backend/.env` to customize:
-
-```bash
-# Trading Parameters
-INITIAL_CAPITAL=10000        # Starting capital
-MAX_POSITION_SIZE=0.1        # Max 10% per position
-RISK_PER_TRADE=0.02         # Risk 2% per trade
-
-# Strategy Parameters
-RSI_PERIOD=14
-RSI_OVERSOLD=30
-RSI_OVERBOUGHT=70
-MA_SHORT_PERIOD=20
-MA_LONG_PERIOD=50
-
-# Screening Criteria
-MIN_PRICE=5                 # Minimum stock price
-MAX_PRICE=500              # Maximum stock price
-MIN_VOLUME=1000000         # Minimum daily volume
-MIN_RSI=25                 # RSI lower bound for screening
-MAX_RSI=35                 # RSI upper bound for screening
-```
+1. **Docker Desktop**: Install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+2. **WSL2**: Recommended for better performance with Docker
+3. **Line Endings**: Git may convert line endings. Configure:
+   ```bash
+   git config --global core.autocrlf false
+   ```
 
 ## API Endpoints
 
-### Trades
-- `GET /api/trades` - Get all trades
-- `GET /api/trades/open` - Get open trades
-- `GET /api/trades/closed` - Get closed trades
-- `GET /api/trades/:id` - Get single trade
-- `POST /api/trades/:id/close` - Close a trade
+- `GET /api/trades/open` - Get open positions
+- `GET /api/trades/picks/screening` - Get daily screening picks
 - `GET /api/trades/stats/portfolio` - Get portfolio statistics
-
-### Market Data
-- `GET /api/market/quote/:symbol` - Get real-time quote
-- `GET /api/market/daily/:symbol` - Get daily historical data
-- `GET /api/market/analyze/:symbol` - Analyze stock and get signals
-- `POST /api/market/screen` - Screen multiple symbols
-
-### Watchlist
-- `GET /api/watchlist` - Get watchlist symbols
 - `GET /api/watchlist/details` - Get watchlist with current prices
-- `POST /api/watchlist` - Add symbol to watchlist
-- `DELETE /api/watchlist/:symbol` - Remove from watchlist
+- `POST /api/trades/:id/close` - Close a position
+- `POST /api/screening/analyze-watchlist` - Trigger manual screening
 
-## Database Schema
-
-The SQLite database includes:
-- **trades**: All trade records with entry/exit data
-- **watchlist**: Symbols being monitored
-- **price_cache**: Cached market data to reduce API calls
-
-## Data Source
-
-Yahoo Finance provides:
-- **Unlimited free API requests**
-- Real-time quotes
-- Historical data (daily, intraday)
-- No API key required
-
-The system implements:
-- Price data caching (1 hour)
-- Graceful fallback to cached data
-
-## Production Deployment
-
-1. **Build the application:**
-```bash
-npm run build
-```
-
-2. **Set production environment variables**
-
-3. **Run with PM2 or similar:**
-```bash
-pm2 start backend/dist/index.js --name trading-algo
-```
-
-4. **Serve frontend** with nginx or similar
-
-5. **Schedule analysis** with cron:
-```cron
-# Run analysis every weekday at 4:30 PM (after market close)
-30 16 * * 1-5 cd /path/to/trading-algo/backend && npm run analyze
-```
-
-## Automated Trading Schedule
-
-For automated trading, set up a cron job:
+## Docker Commands
 
 ```bash
-# Edit crontab
-crontab -e
+# Development
+docker-compose up                    # Start dev environment
+docker-compose down                  # Stop and remove containers
+docker-compose logs -f               # View logs
 
-# Add this line to run analysis every weekday at 4:30 PM EST
-30 16 * * 1-5 cd /path/to/trading-algo/backend && npm run analyze >> /var/log/trading-algo.log 2>&1
+# Production
+docker-compose --profile production up trading-algo-prod
+docker-compose --profile production down
+
+# Rebuild after code changes
+docker-compose build --no-cache
 ```
-
-## Important Notes
-
-- **This is a SIMULATION tool** - trades are saved to the database, not executed with a real broker
-- Always review trades before considering real execution
-- Past performance does not guarantee future results
-- Test thoroughly with paper trading before using real capital
-- The strategy parameters can be customized based on your risk tolerance
-- Monitor API usage to stay within rate limits
-
-## Future Enhancements
-
-Potential improvements:
-- Options trading support with Greeks calculation
-- Backtesting engine with historical data
-- Multiple strategy support
-- Paper trading mode with real-time execution
-- Real broker API integration (Alpaca, Interactive Brokers)
-- Email/SMS notifications for trade signals
-- Advanced risk management (portfolio heat, correlation analysis)
-- Machine learning for signal optimization
 
 ## License
 
-ISC
-
-## Disclaimer
-
-This software is for educational and informational purposes only. It does not constitute financial advice. Trading stocks and options involves risk. Always do your own research and consult with a financial advisor before making investment decisions.
+MIT

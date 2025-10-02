@@ -1,41 +1,53 @@
 import express from 'express';
 import { db } from '../database';
-import { yahooMarketDataService } from '../services/yahooMarketData';
+import { alpacaMarketDataService } from '../services/alpacaMarketData';
 import { TradingStrategy } from '../services/strategy';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
 
-// Get watchlist
+// Get watchlist with pagination
 router.get('/', (req, res) => {
   try {
-    const symbols = db.getWatchlist();
-    res.json(symbols);
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const result = db.getWatchlistPaginated(limit, offset);
+
+    res.json({
+      symbols: result.symbols,
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total,
+    });
   } catch (error) {
     logger.error('Error fetching watchlist:', error);
     res.status(500).json({ error: 'Failed to fetch watchlist' });
   }
 });
 
-// Get watchlist with current data
+// Get watchlist with current data (optimized for API limits)
 router.get('/details', async (req, res) => {
   try {
-    const symbols = db.getWatchlist();
-    const limit = parseInt(req.query.limit as string) || 50; // Default to 50
+    const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
 
-    const symbolsToFetch = symbols.slice(offset, offset + limit);
+    // Get paginated watchlist directly from database
+    const { symbols: symbolsToFetch, total } = db.getWatchlistPaginated(limit, offset);
     const details = [];
+
+    // Use cached screening results when available to avoid analysis calls
+    const screeningResults = db.getStoredScreeningResults();
+    const screeningMap = new Map(screeningResults.map(r => [r.symbol, r]));
 
     for (const symbol of symbolsToFetch) {
       try {
-        const quote = await yahooMarketDataService.getQuote(symbol);
-        const dailyData = await yahooMarketDataService.getDailyData(symbol, 'compact');
+        // Only fetch quote - this uses cache and rate limiting (2 API calls max per symbol)
+        const quote = await alpacaMarketDataService.getQuote(symbol);
 
-        let analysis = null;
-        if (dailyData.length > 50) {
-          analysis = await TradingStrategy.analyzeStock(symbol);
-        }
+        // Use stored screening result if available (no API calls)
+        const screening = screeningMap.get(symbol);
 
         details.push({
           symbol,
@@ -43,8 +55,8 @@ router.get('/details', async (req, res) => {
           change: quote.change,
           changePercent: quote.changePercent,
           volume: quote.volume,
-          signal: analysis?.action || 'HOLD',
-          rsi: analysis?.indicators.rsi,
+          signal: screening?.signal || 'HOLD',
+          rsi: screening?.rsi,
         });
       } catch (error) {
         logger.error(`Error fetching details for ${symbol}:`, error);
@@ -54,10 +66,11 @@ router.get('/details', async (req, res) => {
 
     res.json({
       data: details,
-      total: symbols.length,
+      total,
       limit,
       offset,
-      hasMore: offset + limit < symbols.length
+      hasMore: offset + limit < total,
+      apiStats: alpacaMarketDataService.getApiStats(),
     });
   } catch (error) {
     logger.error('Error fetching watchlist details:', error);
@@ -90,6 +103,48 @@ router.delete('/:symbol', (req, res) => {
   } catch (error) {
     logger.error('Error removing from watchlist:', error);
     res.status(500).json({ error: 'Failed to remove from watchlist' });
+  }
+});
+
+// Bulk import from Russell 3000
+router.post('/bulk-import/russell3000', async (req, res) => {
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    const filePath = path.join(__dirname, '../data/russell3000.txt');
+    const content = await fs.readFile(filePath, 'utf-8');
+    const symbols = content.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+
+    logger.info(`Importing ${symbols.length} symbols from Russell 3000...`);
+
+    // Clear existing watchlist first
+    const existingSymbols = db.getWatchlist();
+    for (const symbol of existingSymbols) {
+      db.removeFromWatchlist(symbol);
+    }
+
+    // Add all symbols (no API calls - just database inserts)
+    let imported = 0;
+    for (const symbol of symbols) {
+      try {
+        db.addToWatchlist(symbol.toUpperCase());
+        imported++;
+      } catch (error) {
+        logger.warn(`Failed to import ${symbol}:`, error);
+      }
+    }
+
+    logger.info(`Successfully imported ${imported} symbols to watchlist`);
+
+    res.json({
+      message: 'Russell 3000 imported to watchlist',
+      imported,
+      total: symbols.length
+    });
+  } catch (error) {
+    logger.error('Error importing Russell 3000:', error);
+    res.status(500).json({ error: 'Failed to import Russell 3000' });
   }
 });
 

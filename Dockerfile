@@ -1,41 +1,48 @@
 # Multi-stage build for production
-FROM node:18-alpine AS builder
+FROM node:21-alpine AS builder
 
-# Build backend
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
+
+# Backend build
 WORKDIR /app/backend
 COPY backend/package*.json ./
 RUN npm ci
 COPY backend/ ./
-RUN npm run build
 
-# Build frontend
+# Frontend build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Production stage
-FROM node:18-alpine
+# Production image
+FROM node:21-alpine
 
 WORKDIR /app
 
-# Copy backend
-COPY --from=builder /app/backend/dist ./backend/dist
-COPY --from=builder /app/backend/node_modules ./backend/node_modules
-COPY --from=builder /app/backend/package.json ./backend/
+# Install production dependencies for backend
+COPY backend/package*.json ./backend/
+WORKDIR /app/backend
+RUN npm ci --only=production
 
-# Copy frontend build
-COPY --from=builder /app/frontend/dist ./frontend/dist
+# Copy built backend
+COPY --from=builder /app/backend/src ./src
+COPY --from=builder /app/backend/dist ./dist
 
-# Install serve to host frontend
-RUN npm install -g serve pm2
+# Copy built frontend
+COPY --from=builder /app/frontend/dist ../frontend/dist
+
+# Create data directory for SQLite
+RUN mkdir -p /app/data
 
 # Expose ports
-EXPOSE 3001 3000
+EXPOSE 3001
 
-# Create startup script
-COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
+# Set environment variables
+ENV NODE_ENV=production
+ENV DATABASE_PATH=/app/data/trading.db
 
-CMD ["/app/docker-entrypoint.sh"]
+# Start backend server
+CMD ["npx", "tsx", "src/index.ts"]

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getWatchlistDetails, getPortfolioStats, addToWatchlist, removeFromWatchlist, getDailyData, analyzeWatchlist, runBulkScreening } from '../api';
 import { WatchlistItem, PortfolioStats as PortfolioStatsType, StockData } from '../types';
 import WatchlistPanel from '../components/WatchlistPanel';
 import PortfolioStats from '../components/PortfolioStats';
 import StockChart from '../components/StockChart';
 import { RefreshCw, Play, Zap } from 'lucide-react';
+import { isMarketHours, getNextRefreshInterval } from '../utils/marketHours';
 
 interface AnalyzedStock {
   symbol: string;
@@ -25,8 +26,16 @@ const Dashboard: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [analyzedStocks, setAnalyzedStocks] = useState<AnalyzedStock[]>([]);
   const [showAnalysisResults, setShowAnalysisResults] = useState(false);
+  const isLoadingRef = useRef(false);
+  const hasInitialLoadedRef = useRef(false);
 
   const loadData = async () => {
+    // Prevent multiple simultaneous loads
+    if (isLoadingRef.current) {
+      return;
+    }
+
+    isLoadingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -45,19 +54,45 @@ const Dashboard: React.FC = () => {
         const dailyRes = await getDailyData(firstSymbol);
         setChartData(dailyRes.data.slice(0, 30));
       }
+
+      hasInitialLoadedRef.current = true;
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
       console.error('Error loading dashboard data:', err);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
   useEffect(() => {
+    // Initial load on mount
     loadData();
-    // Refresh data every 60 seconds
-    const interval = setInterval(loadData, 60000);
-    return () => clearInterval(interval);
+
+    // Set up dynamic refresh interval based on market hours
+    const setupRefreshInterval = () => {
+      const interval = setInterval(() => {
+        // Only refresh after initial load is complete
+        if (hasInitialLoadedRef.current) {
+          loadData();
+        }
+      }, getNextRefreshInterval());
+
+      return interval;
+    };
+
+    const interval = setupRefreshInterval();
+
+    // Re-setup interval every hour to adjust for market hours changes
+    const hourlyCheck = setInterval(() => {
+      clearInterval(interval);
+      setupRefreshInterval();
+    }, 3600000); // Check every hour
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(hourlyCheck);
+    };
   }, []);
 
   const handleAddSymbol = async (symbol: string) => {

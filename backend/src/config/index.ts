@@ -18,6 +18,7 @@ export const config = {
     maxPositionSize: parseFloat(process.env.MAX_POSITION_SIZE || '0.1'),
     riskPerTrade: parseFloat(process.env.RISK_PER_TRADE || '0.02'),
     useAlpaca: process.env.USE_ALPACA === 'true' || false, // Toggle between Alpaca and simulation
+    useAlpacaMarketData: process.env.USE_ALPACA_MARKET_DATA === 'true' || false, // Toggle between Alpaca and Yahoo for historical data
   },
 
   strategy: {

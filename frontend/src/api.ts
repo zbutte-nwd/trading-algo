@@ -17,6 +17,7 @@ export const getClosedTrades = () => api.get<Trade[]>('/trades/closed');
 export const getTrade = (id: number) => api.get<Trade>(`/trades/${id}`);
 export const closeTrade = (id: number) => api.post<Trade>(`/trades/${id}/close`);
 export const getPortfolioStats = () => api.get<PortfolioStats>('/trades/stats/portfolio');
+export const getScreeningPicks = () => api.get('/trades/picks/screening');
 
 // Market Data
 export const getQuote = (symbol: string) => api.get<Quote>(`/market/quote/${symbol}`);

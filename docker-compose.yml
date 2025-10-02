@@ -2,21 +2,44 @@ version: '3.8'
 
 services:
   trading-algo:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     ports:
-      - "3001:3001"  # Backend API
       - "3000:3000"  # Frontend
+      - "3001:3001"  # Backend
     volumes:
-      - ./trading.db:/app/backend/trading.db  # Persist database
-      - ./logs:/app/backend/logs              # Persist logs
+      # Mount source code for hot reload
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      # Persist database
+      - ./data:/app/data
+      # Exclude node_modules from volume mounts
+      - /app/backend/node_modules
+      - /app/frontend/node_modules
+    environment:
+      - NODE_ENV=development
+      - DATABASE_PATH=/app/data/trading.db
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_PAPER=${ALPACA_PAPER:-true}
+    stdin_open: true
+    tty: true
+
+  # Production build
+  trading-algo-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
-      - PORT=3001
-      - TZ=America/Los_Angeles  # PST timezone for scheduler
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - DATABASE_PATH=/app/data/trading.db
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_PAPER=${ALPACA_PAPER:-true}
+    profiles:
+      - production

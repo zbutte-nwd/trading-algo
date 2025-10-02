@@ -31,6 +31,39 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Alpaca test endpoint
+app.get('/api/alpaca/test', async (req, res) => {
+  try {
+    const { createAlpacaService } = await import('./services/alpacaService');
+    const alpaca = createAlpacaService({
+      keyId: process.env.ALPACA_API_KEY || '',
+      secretKey: process.env.ALPACA_SECRET_KEY || '',
+      paper: process.env.ALPACA_PAPER !== 'false',
+    });
+
+    const account = await alpaca.getAccount();
+    const isMarketOpen = await alpaca.isMarketOpen();
+
+    res.json({
+      success: true,
+      account: {
+        cash: account.cash,
+        portfolioValue: account.portfolioValue,
+        buyingPower: account.buyingPower,
+      },
+      marketOpen: isMarketOpen,
+      mode: process.env.ALPACA_PAPER !== 'false' ? 'paper' : 'live',
+    });
+  } catch (error: any) {
+    logger.error('Alpaca test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.toString()
+    });
+  }
+});
+
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error('Unhandled error:', err);
@@ -47,9 +80,8 @@ app.listen(PORT, () => {
     logger.warn('WARNING: ALPHA_VANTAGE_API_KEY not set! Please set it in .env file');
   }
 
-  // Start automated trading scheduler
-  tradingScheduler.startDailyTrading();
-  logger.info('Automated trading scheduler initialized - Daily trading at 5pm PST');
+  // Start automated trading scheduler with all jobs
+  tradingScheduler.start();
 });
 
 // Graceful shutdown

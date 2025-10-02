@@ -1,0 +1,33 @@
+# Development Docker image
+FROM node:21-alpine
+
+# Install build tools
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Copy package files
+COPY backend/package*.json ./backend/
+COPY frontend/package*.json ./frontend/
+
+# Install dependencies
+WORKDIR /app/backend
+RUN npm install
+
+WORKDIR /app/frontend
+RUN npm install
+
+# Copy source code
+WORKDIR /app
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
+
+# Create data directory
+RUN mkdir -p /app/data
+
+# Expose ports
+EXPOSE 3001 3000
+
+# Start both services using a process manager
+WORKDIR /app
+CMD ["sh", "-c", "cd /app/backend && npm run dev & cd /app/frontend && npm run dev & wait"]

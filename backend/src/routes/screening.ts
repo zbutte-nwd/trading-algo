@@ -49,27 +49,32 @@ router.post('/bulk-screen', async (req, res) => {
 
     logger.info(`Bulk screening ${symbolsToScreen.length} symbols from index ${startIndex}`);
 
-    // This will run asynchronously - respond immediately
+    // Run screening synchronously and return detailed results
+    const results = await tradingEngine.analyzeAndTradeWithResults(symbolsToScreen);
+
+    // Count how many were excluded and why
+    const excluded = results.analyzedStocks.filter(s => !s.tradeCreated);
+    const excludedReasons = excluded.reduce((acc, stock) => {
+      acc[stock.action] = (acc[stock.action] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    logger.info(`Bulk screening complete. Processed ${symbolsToScreen.length} symbols. Created ${results.tradesCreated} trades. Excluded ${excluded.length} stocks.`);
+    logger.info(`Exclusion breakdown: ${JSON.stringify(excludedReasons)}`);
+
     res.json({
-      message: 'Bulk screening started',
-      symbolsToScreen: symbolsToScreen.length,
+      message: 'Bulk screening complete',
+      symbolsAnalyzed: symbolsToScreen.length,
+      tradesCreated: results.tradesCreated,
+      excluded: excluded.length,
+      excludedReasons,
+      analyzedStocks: results.analyzedStocks,
       startIndex,
-      note: 'Check logs for progress. This may take several minutes due to API rate limiting.',
     });
 
-    // Run screening in background
-    (async () => {
-      try {
-        await tradingEngine.analyzeAndTrade(symbolsToScreen);
-        logger.info(`Bulk screening complete. Processed ${symbolsToScreen.length} symbols`);
-      } catch (error) {
-        logger.error('Error in bulk screening:', error);
-      }
-    })();
-
   } catch (error: any) {
-    logger.error('Error starting bulk screening:', error);
-    res.status(500).json({ error: error.message || 'Failed to start bulk screening' });
+    logger.error('Error in bulk screening:', error);
+    res.status(500).json({ error: error.message || 'Failed to complete bulk screening' });
   }
 });
 
